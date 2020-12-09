@@ -213,6 +213,10 @@ namespace ModelClassInstanceSyntaxCreator
                 }
                 string fnSyntax = $@"
         public bool {fnName} ({typName} obj1, {typName} obj2) {{
+                if (obj1 == null && obj2 == null)
+                    return true;
+                if (obj1 == null || obj2 == null)
+                    return false;
                 {sb.ToString()}
                 }}";
                 if (string.IsNullOrEmpty(FunctionsList[fnName]))
