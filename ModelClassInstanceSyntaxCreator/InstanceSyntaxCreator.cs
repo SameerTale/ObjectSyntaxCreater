@@ -7,14 +7,17 @@ using System.Threading.Tasks;
 
 namespace ModelClassInstanceSyntaxCreator
 {
-    public class InstanceSyntaxCreator
-    {
 
+        public class InstanceSyntaxCreator
+    {
         public static string SimpleCreator(object obj, Type typ)
         {
-            if (typ.IsAbstract || typ.IsInterface)
+            if (!(typ.IsGenericType && typ.GetGenericTypeDefinition() == typeof(IEnumerable<>)))
             {
-                throw new InvalidOperationException($"Cannot infer the concrete type from {typ.Name}");
+                if (typ.IsAbstract || typ.IsInterface)
+                {
+                    throw new InvalidOperationException($"Cannot infer the concrete type from {typ.Name}");
+                }
             }
             if (obj == null)
             {
@@ -32,6 +35,35 @@ namespace ModelClassInstanceSyntaxCreator
                 }
                 sb.AppendLine("}");
             }
+            else if (typ.IsGenericType && (typ.GetGenericTypeDefinition() == typeof(List<>) || typ.GetGenericTypeDefinition() == typeof(IEnumerable<>)))
+            {
+                var itemType = typ.GetGenericArguments()[0];
+                var collection = (IEnumerable)obj;
+                sb.Append($" new List<{itemType}>() {{");
+                sb.AppendLine();
+                foreach (var elem in collection)
+                {
+                    sb.Append($@"{SimpleCreator(elem, itemType)},");
+                }
+                sb.AppendLine("}");
+            }
+            else if (typ.IsGenericType && (typ.GetGenericTypeDefinition() == typeof(Dictionary<,>) || typ.GetGenericTypeDefinition() == typeof(Dictionary<,>)))
+            {
+                var itemType1 = typ.GetGenericArguments()[0];
+                var itemType2 = typ.GetGenericArguments()[1];
+                var collection = (IEnumerable)obj;
+                sb.Append($" new Dictionary<{itemType1},{itemType2}>() {{");
+                sb.AppendLine();
+                foreach (var elem in collection)
+                {
+                    var key = elem.GetType().GetProperty("Value").GetValue(elem, null);
+                    var val = elem.GetType().GetProperty("Value").GetValue(elem, null);
+                    sb.Append($@"{{");
+                    sb.Append($@"{SimpleCreator(key, itemType1)}, {SimpleCreator(val, itemType2)}");
+                    sb.Append("},");
+                }
+                sb.AppendLine("}");
+            }
             else if (typ.IsEnum)
             {
                 sb.Append($"{typ.Name}.{typ.GetEnumName(obj)}");
@@ -42,23 +74,28 @@ namespace ModelClassInstanceSyntaxCreator
             {
                 try
                 {
-                    var reg = new Regex(@"(?<!\\)""");
-                    var objStr = obj.ToString();
-                    if (reg.IsMatch(objStr))
-                    {
-                        sb.Append("\"" + reg.Replace(objStr, @"\""") + "\"");
-                    }
-                    else
-                    {
-                        sb.Append("\"" + objStr + "\"");
-                    }
-                    //var regx = Regex.Replace(obj.ToString(), @"(?< !\\)""", @"\\""");
-                    //sb.Append("\"" + regx + "\"");
+                    var objStr = JsonConvert.ToString(obj);
+                    sb.Append(objStr);
                 }
                 catch (Exception ex)
                 {
                     sb.Append(ex.Message);
                 }
+            }
+            else if (typ == typeof(DateTime) || typ == typeof(Nullable<DateTime>))
+            {
+                if (obj != null)
+                    sb.Append("DateTime.Parse(\"" + obj.ToString() + "\")");
+                else
+                    sb.Append("null");
+            }
+            else if (typ == typeof(byte))
+            {
+                sb.Append(Convert.ToInt32(obj).ToString());
+            }
+            else if (typ == typeof(char))
+            {
+                sb.Append("'" + obj.ToString() + "'");
             }
             else if (typ.IsValueType)
                 sb.Append(obj.ToString());
@@ -74,7 +111,9 @@ namespace ModelClassInstanceSyntaxCreator
                 foreach (var member in typ.GetMembers())
                 {
                     if (member.MemberType == System.Reflection.MemberTypes.Property || member.MemberType == System.Reflection.MemberTypes.Field || member.MemberType == System.Reflection.MemberTypes.NestedType)
+                    {
                         sb.AppendLine($@"{member.Name} = {SimpleCreator(typ.GetProperty(member.Name).GetValue(obj, null), typ.GetProperty(member.Name).PropertyType)},");
+                    }
                 }
                 sb.AppendLine("}");
             }
@@ -227,5 +266,6 @@ namespace ModelClassInstanceSyntaxCreator
         }
 
     }
+
 
 }
